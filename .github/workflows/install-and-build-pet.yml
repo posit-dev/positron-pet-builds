@@ -2,8 +2,7 @@ name: 'Positron Python CI'
 
 on:
   push:
-    branches:
-      - main
+    branches: ['main', 'dev-*', 'dev']
   pull_request:
 
 env:
@@ -11,8 +10,8 @@ env:
   PET_BRANCH: 'release/latest'
 
 jobs:
-  checkout-and-build:
-    name: Checkout PET and build
+  pet:
+    name: "Checkout PET and build"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -37,13 +36,13 @@ jobs:
             Cargo.toml
             Cargo.lock
           sparse-checkout-cone-mode: false
+      
+      - name: Rust Tool Chain setup
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Rust Tool Chain setup
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Add Rustup target
-      run: rustup target add ${{ matrix.target }}
-      shell: bash
+      - name: Add Rustup target
+        run: rustup target add ${{ matrix.target }}
+        shell: bash
 
       # Compile
       - name: Compile PET
@@ -54,7 +53,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }}
 
       - name: Upload PET binary
-      - uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: python-env-tools
           path: python-env-tools-${{ matrix.target }}
