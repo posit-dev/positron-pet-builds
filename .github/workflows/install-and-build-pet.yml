@@ -1,0 +1,62 @@
+name: 'Positron Python CI'
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  NODE_VERSION: '20.12.1'
+  PET_BRANCH: 'release/latest'
+
+jobs:
+  checkout-and-build:
+    name: Checkout PET and build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # - os: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          # - os: windows-latest
+          #   target: aarch64-pc-windows-msvc
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          # - os: ubuntu-latest
+          #   target: aarch64-unknown-linux-musl
+    steps:
+      - name: Checkout Python Environment Tools
+        uses: actions/checkout@v4
+        with:
+          repository: 'microsoft/python-environment-tools'
+          branch: ${{ env.PET_BRANCH }}
+          sparse-checkout: |
+            crates
+            Cargo.toml
+            Cargo.lock
+          sparse-checkout-cone-mode: false
+
+    - name: Rust Tool Chain setup
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Add Rustup target
+      run: rustup target add ${{ matrix.target }}
+      shell: bash
+
+      # Compile
+      - name: Compile PET
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+        run: |
+          cargo clean
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload PET binary
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-env-tools
+          path: python-env-tools-${{ matrix.target }}
