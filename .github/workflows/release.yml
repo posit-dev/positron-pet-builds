@@ -28,11 +28,6 @@ jobs:
               with:
                   repository: 'microsoft/python-environment-tools'
                   branch: ${{ steps.extract_version.outputs.result }}
-                  sparse-checkout: |
-                      crates
-                      Cargo.toml
-                      Cargo.lock
-                  sparse-checkout-cone-mode: false
     # Check to see whether we have already released this version. If we have, we will skip the
     # release process later on.
     check_release:
