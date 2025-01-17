@@ -14,6 +14,9 @@ jobs:
         outputs:
             PET_VERSION: ${{ steps.extract_version.outputs.result }}
         steps:
+            # Checkout sources
+            - name: Checkout sources
+              uses: actions/checkout@v4
             # Extract version by getting the latest tag 
             - name: Determine latest upstream version
               id: extract_version
@@ -37,10 +40,6 @@ jobs:
         outputs:
             EXISTING_RELEASE: ${{ steps.release_flag.outputs.result }}
         steps:
-            # Checkout sources
-            - name: Checkout sources
-              uses: actions/checkout@v4
-
             - name: Check for existing release tag
               uses: mukunku/tag-exists-action@v1.3.0
               id: check_tag
@@ -60,7 +59,9 @@ jobs:
         needs: [check_release]
         steps:
             - name: Dummy step
-              run: echo ""
+              run: |
+                ls
+                echo ""
 
     # Build PET for macOS. Both arm64 (Apple Silicon) and x64 (Intel) hosts.
     build_macos:
