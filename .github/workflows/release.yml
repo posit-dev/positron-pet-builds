@@ -14,9 +14,6 @@ jobs:
         outputs:
             PET_VERSION: ${{ steps.extract_version.outputs.result }}
         steps:
-            # Checkout sources
-            - name: Checkout sources
-              uses: actions/checkout@v4
             # Extract version by getting the latest tag 
             - name: Determine latest upstream version
               id: extract_version
@@ -24,8 +21,10 @@ jobs:
                   VERSION=$(curl -s https://api.github.com/repos/microsoft/python-environment-tools/releases/latest | jq -r '.tag_name')
                   echo "PET version: ${VERSION}"
                   echo "result=${VERSION}" >> $GITHUB_OUTPUT
+            
+            - name: Checkout sources
+              uses: actions/checkout@v4
 
-            # Checkout sources
             - name: Checkout Python Environment Tools
               uses: actions/checkout@v4
               with:
@@ -86,6 +85,15 @@ jobs:
                       rust_target_prefix: x86_64
 
         steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Checkout Python Environment Tools
+              uses: actions/checkout@v4
+              with:
+                  repository: 'microsoft/python-environment-tools'
+                  branch: '${{ needs.get_version.outputs.PET_VERSION }}'
+
             - name: Install Rust toolchain
               run: |
                 rustup update --no-self-update stable
@@ -100,6 +108,7 @@ jobs:
                   CARGO_FLAGS:
                   PKG_CONFIG_ALLOW_CROSS: 1
               run: |
+                  ls  
                   cargo clean
                   cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-apple-darwin
 
@@ -141,12 +150,21 @@ jobs:
                       rust_target_prefix: x86_64
 
         steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Checkout Python Environment Tools
+              uses: actions/checkout@v4
+              with:
+                  repository: 'microsoft/python-environment-tools'
+
             - name: Compile PET
               env:
                   PET_BUILD_TYPE: ${{ matrix.flavor }}
                   RUST_TARGET: ${{ matrix.rust_target_prefix }}-pc-windows-msvc
               shell: cmd
               run: |
+                  ls 
                   cargo clean
                   cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-pc-windows-msvc
 
@@ -182,6 +200,14 @@ jobs:
                 flavor: [debug, release]
 
         steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Checkout Python Environment Tools
+              uses: actions/checkout@v4
+              with:
+                  repository: 'microsoft/python-environment-tools'
+
             - name: Setup Build Environment
               run: |
                   sudo apt-get update
@@ -194,6 +220,7 @@ jobs:
 
             - name: Compile PET (${{ matrix.flavor }})
               run: |
+                  ls
                   cargo clean
                   cargo build --target ${ARCH_FLAG}-unknown-linux-gnu ${TARGET_FLAG}
 
