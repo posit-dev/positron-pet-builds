@@ -62,71 +62,67 @@ jobs:
               run: ls
 
     # Build PET for macOS. Both arm64 (Apple Silicon) and x64 (Intel) hosts.
-    # build_macos:
-    #     name: Build macOS
-    #     runs-on: [self-hosted-staging, macos, arm64]
-    #     needs: [do_release, get_version]
-    #     timeout-minutes: 40
+    build_macos:
+        name: Build macOS
+        runs-on: [self-hosted-staging, macos, arm64]
+        needs: [do_release, get_version]
+        timeout-minutes: 40
 
-    #     env:
-    #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #         working-directory: 'python-environment-tools'
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            working-directory: 'python-environment-tools'
 
-    #     strategy:
-    #         max-parallel: 1
-    #         matrix:
-    #             arch: [arm64, x64]
-    #             flavor: [debug, release]
-    #             include:
-    #                 - arch: arm64
-    #                   arch_terminal: arm64
-    #                   rust_target_prefix: aarch64
-    #                 - arch: x64
-    #                   arch_terminal: x86_64
-    #                   rust_target_prefix: x86_64
+        strategy:
+            max-parallel: 1
+            matrix:
+                arch: [arm64, x64]
+                flavor: [debug, release]
+                include:
+                    - arch: arm64
+                      arch_terminal: arm64
+                      rust_target_prefix: aarch64
+                    - arch: x64
+                      arch_terminal: x86_64
+                      rust_target_prefix: x86_64
 
-    #     steps:
-    #         - name: Install Rust toolchain
-    #           run: |
-    #             rustup update --no-self-update stable
-    #             rustup default stable
+        steps:
+            - name: Install Rust toolchain
+              run: |
+                rustup update --no-self-update stable
+                rustup default stable
 
-    #         # Checkout sources
-    #         - name: Checkout sources
-    #           uses: actions/checkout@v4
+            # Compile
+            - name: Compile PET (${{ matrix.arch }})
+              env:
+                  npm_config_arch: ${{ matrix.arch }}
+                  KALLICHORE_BUILD_TYPE: ${{ matrix.flavor }}
+                  RUST_TARGET: ${{ matrix.rust_target_prefix }}-apple-darwin
+                  CARGO_FLAGS:
+                  PKG_CONFIG_ALLOW_CROSS: 1
+              run: |
+                  cargo clean
+                  cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-apple-darwin
 
-    #         # Compile
-    #         - name: Compile PET (${{ matrix.arch }})
-    #           env:
-    #               npm_config_arch: ${{ matrix.arch }}
-    #               KALLICHORE_BUILD_TYPE: ${{ matrix.flavor }}
-    #               RUST_TARGET: ${{ matrix.rust_target_prefix }}-apple-darwin
-    #               CARGO_FLAGS:
-    #               PKG_CONFIG_ALLOW_CROSS: 1
-    #           run: |
-    #               cargo clean
-    #               cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-apple-darwin
+            # Compress server to a zip file
+            - name: Create archive
+              run: |
+                  # Enter the build directory
+                  pushd target/${{ matrix.rust_target_prefix }}-apple-darwin/${{ matrix.flavor }}
 
-    #         # Compress server to a zip file
-    #         - name: Create archive
-    #           run: |
-    #               # Enter the build directory
-    #               pushd target/${{ matrix.rust_target_prefix }}-apple-darwin/${{ matrix.flavor }}
+                  # Compress the server to an archive
+                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip"
+                  zip -Xry $ARCHIVE kcserver
 
-    #               # Compress the server to an archive
-    #               ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip"
-    #               zip -Xry $ARCHIVE kcserver
+                  popd
 
-    #               popd
+            # Create build artifact
+            - name: Upload client archive
+              uses: actions/upload-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-darwin-${{ matrix.arch }}-archive
+                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip
 
-    #         # Create build artifact
-    #         - name: Upload client archive
-    #           uses: actions/upload-artifact@v4
-    #           with:
-    #               name: pet-${{ matrix.flavor }}-darwin-${{ matrix.arch }}-archive
-    #               path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip
-
-    # build_windows:
+    build_windows:
         name: Build Windows
         runs-on: windows-latest
         timeout-minutes: 40
@@ -145,9 +141,6 @@ jobs:
                       rust_target_prefix: x86_64
 
         steps:
-            - name: Checkout sources
-              uses: actions/checkout@v4
-
             - name: Compile PET
               env:
                   PET_BUILD_TYPE: ${{ matrix.flavor }}
@@ -189,9 +182,6 @@ jobs:
                 flavor: [debug, release]
 
         steps:
-            - name: Checkout sources
-              uses: actions/checkout@v4
-
             - name: Setup Build Environment
               run: |
                   sudo apt-get update
