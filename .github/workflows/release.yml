@@ -120,7 +120,7 @@ jobs:
 
                   # Compress the server to an archive
                   ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip"
-                  zip -Xry $ARCHIVE kcserver
+                  zip -Xry $ARCHIVE pet
 
                   popd
 
@@ -173,7 +173,7 @@ jobs:
               run: |
                   # Compress the server to an archive
                   $params = @{
-                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\${{ matrix.flavor }}\kcserver.exe", "LICENSE"
+                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\${{ matrix.flavor }}\pet.exe", "LICENSE"
                     DestinationPath = "pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-windows-${{ matrix.arch }}.zip"
                   }
                   Compress-Archive @params
@@ -233,7 +233,7 @@ jobs:
                   # Compress the kernel to an archive
                   ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-linux-${{ matrix.arch }}.zip"
                   [ -e LICENSE ] || cp "$GITHUB_WORKSPACE/LICENSE" LICENSE
-                  zip -Xry $ARCHIVE kcserver LICENSE
+                  zip -Xry $ARCHIVE pet LICENSE
 
                   popd
 
@@ -319,11 +319,11 @@ jobs:
                   popd
 
                   # Create a universal binary
-                  lipo -create x64/kcserver arm64/kcserver -output kcserver
+                  lipo -create x64/pet arm64/pet -output pet
 
                   # Compress and bundle licenses
                   ARCHIVE="$GITHUB_WORKSPACE/pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-darwin-universal.zip"
-                  zip -Xry $ARCHIVE kcserver
+                  zip -Xry $ARCHIVE pet
 
             - name: Upload macOS release artifact (universal)
               uses: actions/upload-release-asset@v1
