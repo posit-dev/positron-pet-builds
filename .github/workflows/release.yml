@@ -1,0 +1,373 @@
+name: "Build Python Environment Tools Release"
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+jobs:
+    # Extract the current version of python-environment-tools from upstream GitHub.
+    get_version:
+        name: Determine PET Version
+        runs-on: ubuntu-latest
+        outputs:
+            PET_VERSION: ${{ steps.extract_version.outputs.result }}
+        steps:
+            # Extract version by getting the latest tag 
+            - name: Determine latest upstream version
+              id: extract_version
+              run: |
+                  VERSION=$(curl -s https://api.github.com/repos/microsoft/python-environment-tools/releases/latest | jq -r '.tag_name' | cut -c 2-)
+                  echo "PET version: ${VERSION}"
+                  echo "result=${VERSION}" >> $GITHUB_OUTPUT
+
+            # Checkout sources
+            - name: Checkout Python Environment Tools
+              uses: actions/checkout@v4
+              with:
+                  repository: 'microsoft/python-environment-tools'
+                  branch: ${{ steps.extract_version.outputs.result }}
+                  sparse-checkout: |
+                      crates
+                      Cargo.toml
+                      Cargo.lock
+                  sparse-checkout-cone-mode: false
+    # Check to see whether we have already released this version. If we have, we will skip the
+    # release process later on.
+    check_release:
+        name: Check for Existing Release
+        runs-on: ubuntu-latest
+        needs: [get_version]
+        outputs:
+            EXISTING_RELEASE: ${{ steps.release_flag.outputs.result }}
+        steps:
+            # Checkout sources
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Check for existing release tag
+              uses: mukunku/tag-exists-action@v1.3.0
+              id: check_tag
+              with:
+                  tag: ${{ needs.get_version.outputs.PET_VERSION }}
+
+            - name: Set release flag
+              id: release_flag
+              run: |
+                  echo "Existing ${{ needs.get_version.outputs.PET_VERSION }} release: ${{steps.check_tag.outputs.exists}}"
+                  echo "result=${{steps.check_tag.outputs.exists}}" >> $GITHUB_OUTPUT
+
+    do_release:
+        name: Trigger a new release
+        if: ${{ needs.check_release.outputs.EXISTING_RELEASE == 'false' }}
+        runs-on: ubuntu-latest
+        needs: [check_release]
+        steps:
+            - name: Dummy step
+              run: echo ""
+
+    # Build PET for macOS. Both arm64 (Apple Silicon) and x64 (Intel) hosts.
+    build_macos:
+        name: Build macOS
+        runs-on: [self-hosted-staging, macos, arm64]
+        needs: [do_release, get_version]
+        timeout-minutes: 40
+
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        strategy:
+            max-parallel: 1
+            matrix:
+                arch: [arm64, x64]
+                flavor: [debug, release]
+                include:
+                    - arch: arm64
+                      arch_terminal: arm64
+                      rust_target_prefix: aarch64
+                    - arch: x64
+                      arch_terminal: x86_64
+                      rust_target_prefix: x86_64
+
+        steps:
+            - name: Install Rust toolchain
+              run: |
+                rustup update --no-self-update stable
+                rustup default stable
+
+            # Checkout sources
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            # Compile
+            - name: Compile PET (${{ matrix.arch }})
+              env:
+                  npm_config_arch: ${{ matrix.arch }}
+                  KALLICHORE_BUILD_TYPE: ${{ matrix.flavor }}
+                  RUST_TARGET: ${{ matrix.rust_target_prefix }}-apple-darwin
+                  CARGO_FLAGS:
+                  PKG_CONFIG_ALLOW_CROSS: 1
+              run: |
+                  cargo clean
+                  cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-apple-darwin
+
+            # Compress server to a zip file
+            - name: Create archive
+              run: |
+                  # Enter the build directory
+                  pushd target/${{ matrix.rust_target_prefix }}-apple-darwin/${{ matrix.flavor }}
+
+                  # Compress the server to an archive
+                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip"
+                  zip -Xry $ARCHIVE kcserver
+
+                  popd
+
+            # Create build artifact
+            - name: Upload client archive
+              uses: actions/upload-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-darwin-${{ matrix.arch }}-archive
+                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip
+
+    build_windows:
+        name: Build Windows
+        runs-on: windows-latest
+        timeout-minutes: 40
+        needs: [do_release, get_version]
+
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        strategy:
+            matrix:
+                arch: [x64]
+                flavor: [debug, release]
+                include:
+                    - arch: x64
+                      rust_target_prefix: x86_64
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Compile PET
+              env:
+                  PET_BUILD_TYPE: ${{ matrix.flavor }}
+                  RUST_TARGET: ${{ matrix.rust_target_prefix }}-pc-windows-msvc
+              shell: cmd
+              run: |
+                  cargo clean
+                  cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-pc-windows-msvc
+
+            - name: Create archive
+              shell: pwsh
+              run: |
+                  # Compress the server to an archive
+                  $params = @{
+                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\${{ matrix.flavor }}\kcserver.exe", "LICENSE"
+                    DestinationPath = "pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-windows-${{ matrix.arch }}.zip"
+                  }
+                  Compress-Archive @params
+
+            - name: Upload client archive
+              uses: actions/upload-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-windows-${{ matrix.arch }}-archive
+                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-windows-${{ matrix.arch }}.zip
+
+    build_linux:
+        name: "Build Linux"
+        uses: ./.github/workflows/release-linux.yml
+        needs: [do_release, get_version]
+        secrets: inherit
+        with:
+            version: ${{ needs.get_version.outputs.PET_VERSION }}
+
+    create_release:
+        name: Create Release
+        runs-on: [self-hosted, macos, arm64]
+        needs: [do_release, get_version, build_macos, build_windows, build_linux]
+        env:
+            GITHUB_TOKEN: ${{ github.token }}
+        outputs:
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+        steps:
+            - name: Create release
+              uses: actions/create-release@v1
+              id: create_release
+              with:
+                  draft: false
+                  prerelease: true
+                  release_name: ${{ needs.get_version.outputs.PET_VERSION }}
+                  tag_name: ${{ needs.get_version.outputs.PET_VERSION }}
+
+    # Uploads binaries, if we created a release
+    upload_release_binaries:
+        name: Upload Release Binaries
+        runs-on: [self-hosted, macos, arm64]
+        needs: [create_release, get_version]
+        permissions:
+           contents: write  # Required for creating a tag and release
+        env:
+            GITHUB_TOKEN: ${{ github.token }}
+            DEBUG_FLAG: ${{ matrix.flavor == 'debug' && '-debug' || '' }}
+            RELEASE_TAG: ${{ needs.get_version.outputs.PET_VERSION }}
+        strategy:
+            max-parallel: 1
+            matrix:
+                flavor: [debug, release]
+
+        steps:
+            # Download all binaries
+            - name: Download PET for macOS arm64 server (${{ matrix.flavor }})
+              uses: actions/download-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-darwin-arm64-archive
+
+            - name: Download PET for macOS x64 (${{ matrix.flavor}})
+              uses: actions/download-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-darwin-x64-archive
+
+            - name: Download PET for Windows x64 (${{ matrix.flavor}})
+              uses: actions/download-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-windows-x64-archive
+
+            - name: Download PET for Linux x64 (${{ matrix.flavor}})
+              uses: actions/download-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-linux-x64-archive
+
+            - name: Download PET for Linux arm64 (${{ matrix.flavor}})
+              uses: actions/download-artifact@v4
+              with:
+                  name: pet-${{ matrix.flavor }}-linux-arm64-archive
+
+            # Combine macOS binaries to a single binary with lipo
+            - name: Create macOS universal binary
+              run: |
+                  # Decompress x64 builds
+                  rm -rf x64 && mkdir x64 && pushd x64
+                  unzip ../pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-darwin-x64.zip
+                  popd
+
+                  # Decompress arm64 build
+                  rm -rf arm64 && mkdir arm64 && pushd arm64
+                  unzip ../pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-darwin-arm64.zip
+                  popd
+
+                  # Create a universal binary
+                  lipo -create x64/kcserver arm64/kcserver -output kcserver
+
+                  # Compress and bundle licenses
+                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-darwin-universal.zip"
+                  zip -Xry $ARCHIVE kcserver
+
+            - name: Upload macOS release artifact (universal)
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+              with:
+                  upload_url: ${{ needs.create_release.outputs.upload_url }}
+                  asset_path: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-darwin-universal.zip
+                  asset_name: pet-${{ needs.get_version.outputs.PET_VERSION }}${{ env.DEBUG_FLAG }}-darwin-universal.zip
+                  asset_content_type: application/octet-stream
+
+            - name: Upload Windows release artifact (x64)
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+              with:
+                  upload_url: ${{ needs.create_release.outputs.upload_url }}
+                  asset_path: pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-windows-x64.zip
+                  asset_name: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-windows-x64.zip
+                  asset_content_type: application/octet-stream
+
+            - name: Upload Linux release artifacts (x64)
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+              with:
+                  upload_url: ${{ needs.create_release.outputs.upload_url }}
+                  asset_path: pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-linux-x64.zip
+                  asset_name: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-linux-x64.zip
+                  asset_content_type: application/octet-stream
+
+            - name: Upload Linux release artifacts (arm64)
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+              with:
+                  upload_url: ${{ needs.create_release.outputs.upload_url }}
+                  asset_path: pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-linux-arm64.zip
+                  asset_name: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-linux-arm64.zip
+                  asset_content_type: application/octet-stream
+
+    # Publish new releases to the pet-builds public repository
+    publish_public_release:
+        name: Publish Public Release
+        runs-on: ubuntu-latest
+        needs: [upload_release_binaries, get_version]
+        permissions:
+           contents: write  # Required for creating a tag and release
+        env:
+            RELEASE_TAG: ${{ needs.get_version.outputs.PET_VERSION }}
+        steps:
+            - name: Download macOS release
+              uses: dsaltares/fetch-gh-release-asset@1.1.2
+              with:
+                  version: tags/${{ env.RELEASE_TAG }}
+                  file: pet-${{ env.RELEASE_TAG }}-darwin-universal.zip
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Download Linux release (x64)
+              uses: dsaltares/fetch-gh-release-asset@1.1.2
+              with:
+                  version: tags/${{ env.RELEASE_TAG }}
+                  file: pet-${{ env.RELEASE_TAG }}-linux-x64.zip
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Download Linux release (arm64)
+              uses: dsaltares/fetch-gh-release-asset@1.1.2
+              with:
+                  version: tags/${{ env.RELEASE_TAG }}
+                  file: pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Download Windows release
+              uses: dsaltares/fetch-gh-release-asset@1.1.2
+              with:
+                  version: tags/${{ env.RELEASE_TAG }}
+                  file: pet-${{ env.RELEASE_TAG }}-windows-x64.zip
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            # - name: Create access token
+            #   uses: actions/create-github-app-token@v1
+            #   id: app-token
+            #   with:
+            #       app-id: ${{ vars.POSITRON_BOT_APP_ID }}
+            #       private-key: ${{ secrets.POSITRON_BOT_PRIVATE_KEY }}
+            #       owner: ${{ github.repository_owner }}
+            #       repositories: |
+            #           pet
+            #           pet-builds
+
+            # - name: Create public release
+            #   uses: softprops/action-gh-release@v2
+            #   with:
+            #       token: ${{ steps.app-token.outputs.token }}
+            #       repository: posit-dev/positron-pet-builds
+            #       tag_name: ${{ env.RELEASE_TAG }}
+            #       prerelease: true
+            #       fail_on_unmatched_files: true
+            #       generate_release_notes: false
+            #       body: |
+            #           PET ${{env.RELEASE_TAG }}
+            #       files: |
+            #           pet-${{ env.RELEASE_TAG }}-darwin-universal.zip
+            #           pet-${{ env.RELEASE_TAG }}-windows-x64.zip
+            #           pet-${{ env.RELEASE_TAG }}-linux-x64.zip
+            #           pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
+
