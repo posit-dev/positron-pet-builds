@@ -113,7 +113,7 @@ jobs:
             - name: Create archive
               run: |
                   # Enter the build directory
-                  pushd target/${{ matrix.rust_target_prefix }}-apple-darwin
+                  pushd target/${{ matrix.rust_target_prefix }}-apple-darwin/release
 
                   # Compress the server to an archive
                   ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-darwin-${{ matrix.arch }}.zip"
@@ -168,7 +168,7 @@ jobs:
               run: |
                   # Compress the server to an archive
                   $params = @{
-                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\pet.exe", "LICENSE"
+                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\release\pet.exe", "LICENSE"
                     DestinationPath = "pet-${{ needs.get_version.outputs.PET_VERSION }}-windows-${{ matrix.arch }}.zip"
                   }
                   Compress-Archive @params
