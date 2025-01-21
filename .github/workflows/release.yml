@@ -189,7 +189,7 @@ jobs:
 
         strategy:
             matrix:
-                arch: [x64] # for now, skip arm64
+                arch: [x64, arm64]
 
         steps:
             - name: Checkout sources
