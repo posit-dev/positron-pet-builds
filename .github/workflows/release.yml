@@ -196,7 +196,7 @@ jobs:
 
         strategy:
             matrix:
-                arch: [x64, arm64]
+                arch: [x64] # for now, skip arm64]
                 flavor: [debug, release]
 
         steps:
@@ -266,7 +266,7 @@ jobs:
     upload_release_binaries:
         name: Upload Release Binaries
         runs-on: [self-hosted, macos, arm64]
-        needs: [create_release, get_version]
+        needs: [create_release, get_version, build_macos, build_windows, build_linux]
         permissions:
            contents: write  # Required for creating a tag and release
         env:
