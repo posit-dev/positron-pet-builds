@@ -75,7 +75,6 @@ jobs:
             max-parallel: 1
             matrix:
                 arch: [arm64, x64]
-                flavor: [debug, release]
                 include:
                     - arch: arm64
                       arch_terminal: arm64
@@ -103,23 +102,21 @@ jobs:
             - name: Compile PET (${{ matrix.arch }})
               env:
                   npm_config_arch: ${{ matrix.arch }}
-                  KALLICHORE_BUILD_TYPE: ${{ matrix.flavor }}
                   RUST_TARGET: ${{ matrix.rust_target_prefix }}-apple-darwin
-                  CARGO_FLAGS:
                   PKG_CONFIG_ALLOW_CROSS: 1
               run: |
                   ls  
                   cargo clean
-                  cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-apple-darwin
+                  cargo build --release --target ${{ matrix.rust_target_prefix }}-apple-darwin
 
             # Compress server to a zip file
             - name: Create archive
               run: |
                   # Enter the build directory
-                  pushd target/${{ matrix.rust_target_prefix }}-apple-darwin/${{ matrix.flavor }}
+                  pushd target/${{ matrix.rust_target_prefix }}-apple-darwin
 
                   # Compress the server to an archive
-                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip"
+                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-darwin-${{ matrix.arch }}.zip"
                   zip -Xry $ARCHIVE pet
 
                   popd
@@ -128,8 +125,8 @@ jobs:
             - name: Upload client archive
               uses: actions/upload-artifact@v4
               with:
-                  name: pet-${{ matrix.flavor }}-darwin-${{ matrix.arch }}-archive
-                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-darwin-${{ matrix.arch }}.zip
+                  name: pet-darwin-${{ matrix.arch }}-archive
+                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-darwin-${{ matrix.arch }}.zip
 
     build_windows:
         name: Build Windows
@@ -144,7 +141,6 @@ jobs:
         strategy:
             matrix:
                 arch: [x64]
-                flavor: [debug, release]
                 include:
                     - arch: x64
                       rust_target_prefix: x86_64
@@ -160,44 +156,40 @@ jobs:
 
             - name: Compile PET
               env:
-                  PET_BUILD_TYPE: ${{ matrix.flavor }}
                   RUST_TARGET: ${{ matrix.rust_target_prefix }}-pc-windows-msvc
               shell: cmd
               run: |
                   ls 
                   cargo clean
-                  cargo build ${{ matrix.flavor == 'release' && '--release' || '' }} --target ${{ matrix.rust_target_prefix }}-pc-windows-msvc
+                  cargo build --release --target ${{ matrix.rust_target_prefix }}-pc-windows-msvc
 
             - name: Create archive
               shell: pwsh
               run: |
                   # Compress the server to an archive
                   $params = @{
-                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\${{ matrix.flavor }}\pet.exe", "LICENSE"
-                    DestinationPath = "pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-windows-${{ matrix.arch }}.zip"
+                    Path = "target\${{ matrix.rust_target_prefix }}-pc-windows-msvc\pet.exe", "LICENSE"
+                    DestinationPath = "pet-${{ needs.get_version.outputs.PET_VERSION }}-windows-${{ matrix.arch }}.zip"
                   }
                   Compress-Archive @params
 
             - name: Upload client archive
               uses: actions/upload-artifact@v4
               with:
-                  name: pet-${{ matrix.flavor }}-windows-${{ matrix.arch }}-archive
-                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-windows-${{ matrix.arch }}.zip
+                  name: pet-windows-${{ matrix.arch }}-archive
+                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-windows-${{ matrix.arch }}.zip
 
     build_linux:
         name: "Build Linux"
         runs-on: ${{ matrix.arch == 'x64' && 'ubuntu-22.04' || 'ubuntu-24.04-arm64-4-core' }}
         needs: [do_release, get_version]
         env:
-            DEBUG_FLAG: ${{ matrix.flavor == 'debug' && '-debug' || '' }}
-            TARGET_FLAG: ${{ matrix.flavor == 'release' && '--release' || '' }}
             ARCH_FLAG: ${{ matrix.arch == 'x64' && 'x86_64' || 'aarch64' }}
             working-directory: 'python-environment-tools'
 
         strategy:
             matrix:
-                arch: [x64] # for now, skip arm64]
-                flavor: [debug, release]
+                arch: [x64] # for now, skip arm64
 
         steps:
             - name: Checkout sources
@@ -218,20 +210,20 @@ jobs:
               run: |
                   rustup target add aarch64-unknown-linux-gnu
 
-            - name: Compile PET (${{ matrix.flavor }})
+            - name: Compile PET
               run: |
                   ls
                   cargo clean
-                  cargo build --target ${ARCH_FLAG}-unknown-linux-gnu ${TARGET_FLAG}
+                  cargo build --target ${ARCH_FLAG}-unknown-linux-gnu --release
 
             # Compress kernel to a zip file
             - name: Create archive
               run: |
                   # Enter the build directory
-                  pushd target/${ARCH_FLAG}-unknown-linux-gnu/${{ matrix.flavor }}
+                  pushd target/${ARCH_FLAG}-unknown-linux-gnu/release
 
                   # Compress the kernel to an archive
-                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-linux-${{ matrix.arch }}.zip"
+                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ needs.get_version.outputs.PET_VERSION }}-linux-${{ matrix.arch }}.zip"
                   [ -e LICENSE ] || cp "$GITHUB_WORKSPACE/LICENSE" LICENSE
                   zip -Xry $ARCHIVE pet LICENSE
 
@@ -240,8 +232,8 @@ jobs:
             - name: Upload archive
               uses: actions/upload-artifact@v4
               with:
-                  name: pet-${{ matrix.flavor }}-linux-${{ matrix.arch }}-archive
-                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-${{ matrix.flavor }}-linux-${{ matrix.arch }}.zip
+                  name: pet-linux-${{ matrix.arch }}-archive
+                  path: pet-${{ needs.get_version.outputs.PET_VERSION }}-linux-${{ matrix.arch }}.zip
 
     create_release:
         name: Create Release
@@ -271,58 +263,55 @@ jobs:
            contents: write  # Required for creating a tag and release
         env:
             GITHUB_TOKEN: ${{ github.token }}
-            DEBUG_FLAG: ${{ matrix.flavor == 'debug' && '-debug' || '' }}
             RELEASE_TAG: ${{ needs.get_version.outputs.PET_VERSION }}
         strategy:
             max-parallel: 1
-            matrix:
-                flavor: [debug, release]
 
         steps:
             # Download all binaries
-            - name: Download PET for macOS arm64 server (${{ matrix.flavor }})
+            - name: Download PET for macOS arm64 server
               uses: actions/download-artifact@v4
               with:
                   name: pet-${{ matrix.flavor }}-darwin-arm64-archive
 
-            - name: Download PET for macOS x64 (${{ matrix.flavor}})
+            - name: Download PET for macOS x64
               uses: actions/download-artifact@v4
               with:
                   name: pet-${{ matrix.flavor }}-darwin-x64-archive
 
-            - name: Download PET for Windows x64 (${{ matrix.flavor}})
+            - name: Download PET for Windows x64
               uses: actions/download-artifact@v4
               with:
                   name: pet-${{ matrix.flavor }}-windows-x64-archive
 
-            - name: Download PET for Linux x64 (${{ matrix.flavor}})
+            - name: Download PET for Linux x64
               uses: actions/download-artifact@v4
               with:
-                  name: pet-${{ matrix.flavor }}-linux-x64-archive
+                  name: pet-linux-x64-archive
 
-            - name: Download PET for Linux arm64 (${{ matrix.flavor}})
+            - name: Download PET for Linux arm64
               uses: actions/download-artifact@v4
               with:
-                  name: pet-${{ matrix.flavor }}-linux-arm64-archive
+                  name: pet-linux-arm64-archive
 
             # Combine macOS binaries to a single binary with lipo
             - name: Create macOS universal binary
               run: |
                   # Decompress x64 builds
                   rm -rf x64 && mkdir x64 && pushd x64
-                  unzip ../pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-darwin-x64.zip
+                  unzip ../pet-${{ env.RELEASE_TAG }}-darwin-x64.zip
                   popd
 
                   # Decompress arm64 build
                   rm -rf arm64 && mkdir arm64 && pushd arm64
-                  unzip ../pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-darwin-arm64.zip
+                  unzip ../pet-${{ env.RELEASE_TAG }}-darwin-arm64.zip
                   popd
 
                   # Create a universal binary
                   lipo -create x64/pet arm64/pet -output pet
 
                   # Compress and bundle licenses
-                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-darwin-universal.zip"
+                  ARCHIVE="$GITHUB_WORKSPACE/pet-${{ env.RELEASE_TAG }}-darwin-universal.zip"
                   zip -Xry $ARCHIVE pet
 
             - name: Upload macOS release artifact (universal)
@@ -331,8 +320,8 @@ jobs:
                   GITHUB_TOKEN: ${{ github.token }}
               with:
                   upload_url: ${{ needs.create_release.outputs.upload_url }}
-                  asset_path: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-darwin-universal.zip
-                  asset_name: pet-${{ needs.get_version.outputs.PET_VERSION }}${{ env.DEBUG_FLAG }}-darwin-universal.zip
+                  asset_path: pet-${{ env.RELEASE_TAG }}-darwin-universal.zip
+                  asset_name: pet-${{ needs.get_version.outputs.PET_VERSION }}-darwin-universal.zip
                   asset_content_type: application/octet-stream
 
             - name: Upload Windows release artifact (x64)
@@ -341,8 +330,8 @@ jobs:
                   GITHUB_TOKEN: ${{ github.token }}
               with:
                   upload_url: ${{ needs.create_release.outputs.upload_url }}
-                  asset_path: pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-windows-x64.zip
-                  asset_name: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-windows-x64.zip
+                  asset_path: pet-${{ env.RELEASE_TAG }}-windows-x64.zip
+                  asset_name: pet-${{ env.RELEASE_TAG }}-windows-x64.zip
                   asset_content_type: application/octet-stream
 
             - name: Upload Linux release artifacts (x64)
@@ -351,8 +340,8 @@ jobs:
                   GITHUB_TOKEN: ${{ github.token }}
               with:
                   upload_url: ${{ needs.create_release.outputs.upload_url }}
-                  asset_path: pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-linux-x64.zip
-                  asset_name: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-linux-x64.zip
+                  asset_path: pet-${{ env.RELEASE_TAG }}-linux-x64.zip
+                  asset_name: pet-${{ env.RELEASE_TAG }}-linux-x64.zip
                   asset_content_type: application/octet-stream
 
             - name: Upload Linux release artifacts (arm64)
@@ -361,8 +350,8 @@ jobs:
                   GITHUB_TOKEN: ${{ github.token }}
               with:
                   upload_url: ${{ needs.create_release.outputs.upload_url }}
-                  asset_path: pet-${{ env.RELEASE_TAG }}-${{ matrix.flavor }}-linux-arm64.zip
-                  asset_name: pet-${{ env.RELEASE_TAG }}${{ env.DEBUG_FLAG }}-linux-arm64.zip
+                  asset_path: pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
+                  asset_name: pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
                   asset_content_type: application/octet-stream
 
     # Publish new releases to the pet-builds public repository
@@ -403,31 +392,30 @@ jobs:
                   file: pet-${{ env.RELEASE_TAG }}-windows-x64.zip
                   token: ${{ secrets.GITHUB_TOKEN }}
 
-            # - name: Create access token
-            #   uses: actions/create-github-app-token@v1
-            #   id: app-token
-            #   with:
-            #       app-id: ${{ vars.POSITRON_BOT_APP_ID }}
-            #       private-key: ${{ secrets.POSITRON_BOT_PRIVATE_KEY }}
-            #       owner: ${{ github.repository_owner }}
-            #       repositories: |
-            #           pet
-            #           pet-builds
+            - name: Create access token
+              uses: actions/create-github-app-token@v1
+              id: app-token
+              with:
+                  app-id: ${{ vars.POSITRON_BOT_APP_ID }}
+                  private-key: ${{ secrets.POSITRON_BOT_PRIVATE_KEY }}
+                  owner: ${{ github.repository_owner }}
+                  repositories: |
+                      positron-pet-builds
 
-            # - name: Create public release
-            #   uses: softprops/action-gh-release@v2
-            #   with:
-            #       token: ${{ steps.app-token.outputs.token }}
-            #       repository: posit-dev/positron-pet-builds
-            #       tag_name: ${{ env.RELEASE_TAG }}
-            #       prerelease: true
-            #       fail_on_unmatched_files: true
-            #       generate_release_notes: false
-            #       body: |
-            #           PET ${{env.RELEASE_TAG }}
-            #       files: |
-            #           pet-${{ env.RELEASE_TAG }}-darwin-universal.zip
-            #           pet-${{ env.RELEASE_TAG }}-windows-x64.zip
-            #           pet-${{ env.RELEASE_TAG }}-linux-x64.zip
-            #           pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
+            - name: Create public release
+              uses: softprops/action-gh-release@v2
+              with:
+                  token: ${{ steps.app-token.outputs.token }}
+                  repository: posit-dev/positron-pet-builds
+                  tag_name: ${{ env.RELEASE_TAG }}
+                  prerelease: true
+                  fail_on_unmatched_files: true
+                  generate_release_notes: false
+                  body: |
+                      PET ${{env.RELEASE_TAG }}
+                  files: |
+                      pet-${{ env.RELEASE_TAG }}-darwin-universal.zip
+                      pet-${{ env.RELEASE_TAG }}-windows-x64.zip
+                      pet-${{ env.RELEASE_TAG }}-linux-x64.zip
+                      pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
 
