@@ -3,7 +3,9 @@ on:
     push:
         branches: ['main']
     pull_request:
-        branches: ['main', 'dev-*', 'dev', '*-ci']
+        branches: ['main', 'dev', '*-ci']
+    schedule:
+        - cron: "0 0 1 * *"
     workflow_dispatch:
 
 jobs:
@@ -239,6 +241,7 @@ jobs:
         name: Create Release
         runs-on: [self-hosted, macos, arm64]
         needs: [do_release, get_version, build_macos, build_windows]
+        if: github.ref == 'refs/heads/main'
         env:
             GITHUB_TOKEN: ${{ github.token }}
             working-directory: 'python-environment-tools'
@@ -391,31 +394,3 @@ jobs:
                   version: tags/${{ env.RELEASE_TAG }}
                   file: pet-${{ env.RELEASE_TAG }}-windows-x64.zip
                   token: ${{ secrets.GITHUB_TOKEN }}
-
-            # - name: Create access token
-            #   uses: actions/create-github-app-token@v1
-            #   id: app-token
-            #   with:
-            #       app-id: ${{ vars.POSITRON_BOT_APP_ID }}
-            #       private-key: ${{ secrets.POSITRON_BOT_PRIVATE_KEY }}
-            #       owner: ${{ github.repository_owner }}
-            #       repositories: |
-            #           positron-pet-builds
-
-            # - name: Create public release
-            #   uses: softprops/action-gh-release@v2
-            #   with:
-            #       token: ${{ steps.app-token.outputs.token }}
-            #       repository: posit-dev/positron-pet-builds
-            #       tag_name: ${{ env.RELEASE_TAG }}
-            #       prerelease: true
-            #       fail_on_unmatched_files: true
-            #       generate_release_notes: false
-            #       body: |
-            #           PET ${{env.RELEASE_TAG }}
-            #       files: |
-            #           pet-${{ env.RELEASE_TAG }}-darwin-universal.zip
-            #           pet-${{ env.RELEASE_TAG }}-windows-x64.zip
-            #           pet-${{ env.RELEASE_TAG }}-linux-x64.zip
-            #           pet-${{ env.RELEASE_TAG }}-linux-arm64.zip
-
