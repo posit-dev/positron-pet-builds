@@ -188,6 +188,7 @@ jobs:
         env:
             ARCH_FLAG: ${{ matrix.arch == 'x64' && 'x86_64' || 'aarch64' }}
             working-directory: 'python-environment-tools'
+            GLIBC_MAX_VERSION: "2.26"
 
         strategy:
             matrix:
@@ -202,10 +203,16 @@ jobs:
               with:
                   repository: 'microsoft/python-environment-tools'
 
-            - name: Setup Build Environment
+            - name: Setup Rust Build Environment
               run: |
                   sudo apt-get update
                   sudo apt-get install -y cargo
+
+            - name: Setup Zig Build Environment
+              run: |
+                  cargo install --locked cargo-zigbuild
+                  sudo apt install python3-pip
+                  pip3 install ziglang
 
             - name: Setup Build Environment for arm64
               if: matrix.arch == 'arm64'
@@ -216,7 +223,7 @@ jobs:
               run: |
                   ls
                   cargo clean
-                  cargo build --target ${ARCH_FLAG}-unknown-linux-gnu --release
+                  cargo zigbuild --target ${ARCH_FLAG}-unknown-linux-gnu.${GLIBC_MAX_VERSION} --release
 
             # Compress kernel to a zip file
             - name: Create archive
